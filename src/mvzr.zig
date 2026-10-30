@@ -101,8 +101,8 @@ pub const Regex: type = SizedRegex(MAX_REGEX_OPS, MAX_CHAR_SETS);
 
 pub fn SizedRegex(ops: comptime_int, char_sets: comptime_int) type {
     return struct {
-        patt: [ops]RegOp = [1]RegOp{.{ .unused = {} }} ** ops,
-        sets: [char_sets]CharSet = [1]CharSet{.{ .low = 0, .hi = 0 }} ** char_sets,
+        patt: [ops]RegOp = @splat(.{ .unused = {} }),
+        sets: [char_sets]CharSet = @splat(.{ .low = 0, .hi = 0 }),
 
         const SizedRegexT = @This();
 
@@ -2179,6 +2179,19 @@ fn testOwnedRegex(needle: []const u8, haystack: []const u8) !void {
     }
 }
 
+/// `s` repeated `n` times, null terminated. 0.17 removed the array
+/// multiplication operator, so the tests build their long inputs with this.
+fn repeat(comptime s: []const u8, comptime n: usize) *const [s.len * n:0]u8 {
+    return comptime blk: {
+        @setEvalBranchQuota(s.len * n + 1000);
+        var out: [s.len * n:0]u8 = undefined;
+        for (0..n) |i| @memcpy(out[i * s.len ..][0..s.len], s);
+        out[s.len * n] = 0;
+        const final = out;
+        break :blk &final;
+    };
+}
+
 test "match some things" {
     try testMatchAll("abc", "abc");
     try testMatchAll("[a-z]", "d");
@@ -2310,12 +2323,13 @@ test "match some things" {
     // https://github.com/mnemnion/mvzr/issues/1#issuecomment-2238087036
     try testMatchAll("^[a-zA-Z0-9_!#$%&.-]+@([a-zA-Z0-9.-])+$", "myname.myfirst_name@gmail.com");
 
+
     // Non-catastropic backtracking #1
-    try testFail("(a+a+)+b", "a" ** 2048);
+    try testFail("(a+a+)+b", repeat("a", 2048));
     // Non-catastropic backtracking #2
-    try testFail("(a+?a+?)+?b", "a" ** 2048);
+    try testFail("(a+?a+?)+?b", repeat("a", 2048));
     // Non-catastropic backtracking #3
-    try testFail("^(.*?,){254}P", "12345," ** 255);
+    try testFail("^(.*?,){254}P", repeat("12345,", 255));
 }
 
 test "heap allocated regex and match" {
